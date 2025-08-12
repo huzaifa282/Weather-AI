@@ -2,7 +2,7 @@
 
 A beautiful, responsive weather application built with React and Tailwind CSS. Features dynamic backgrounds, glassmorphism design, smooth animations, and real-time weather data from OpenWeatherMap API.
 
-![Weather App Preview](https://via.placeholder.com/800x400/4F46E5/FFFFFF?text=Aesthetic+Weather+App)
+![Weather App Preview](https://weather-ai-by-z.vercel.app/)
 
 ## ✨ Features
 
