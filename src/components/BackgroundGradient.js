@@ -59,9 +59,18 @@ const BackgroundGradient = ({ weatherData }) => {
       return 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-600';
     }
 
-    const condition = weatherData.weather[0].description.toLowerCase();
-    const mainCondition = weatherData.weather[0].main.toLowerCase();
-    const isNight = weatherData.weather[0].icon.includes('n');
+    // Handle both old API format and new One Call 3.0 format
+    const currentWeather = weatherData.current || weatherData;
+    const weatherArray = currentWeather.weather || weatherData.weather;
+    
+    if (!weatherArray || !weatherArray[0]) {
+      // Fallback if weather array is not available
+      return 'bg-gradient-to-br from-blue-400 via-blue-500 to-blue-600';
+    }
+
+    const condition = weatherArray[0].description.toLowerCase();
+    const mainCondition = weatherArray[0].main.toLowerCase();
+    const isNight = weatherArray[0].icon.includes('n');
     
     // Check for specific weather condition first
     if (weatherGradients[condition]) {

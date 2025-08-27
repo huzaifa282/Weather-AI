@@ -133,8 +133,74 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
     return false;
   };
 
+  // Location-based region detection helper function
+  const getRegionFromLocation = (location, fallbackCountry = 'PK') => {
+    if (!location) return fallbackCountry;
+    
+    const locationLower = location.toLowerCase();
+    
+    // Turkish cities
+    if (locationLower.includes('istanbul') || locationLower.includes('ankara') || 
+        locationLower.includes('izmir') || locationLower.includes('turkey')) {
+      return 'TR';
+    }
+    
+    // Pakistani cities
+    if (locationLower.includes('karachi') || locationLower.includes('lahore') || 
+        locationLower.includes('islamabad') || locationLower.includes('pakistan')) {
+      return 'PK';
+    }
+    
+    // US cities and states
+    if (locationLower.includes('california') || locationLower.includes('los angeles') || 
+        locationLower.includes('san francisco') || locationLower.includes('new york') ||
+        locationLower.includes('chicago') || locationLower.includes('miami') ||
+        locationLower.includes('seattle') || locationLower.includes('usa') ||
+        locationLower.includes('united states') || locationLower.includes('america') ||
+        locationLower.includes('texas') || locationLower.includes('florida') ||
+        locationLower.includes('mississippi') || locationLower.includes('alabama') ||
+        locationLower.includes('georgia') || locationLower.includes('nevada') ||
+        locationLower.includes('oregon') || locationLower.includes('washington') ||
+        locationLower.includes('colorado') || locationLower.includes('arizona') ||
+        locationLower.includes('the united states') || locationLower.includes('us')) {
+      return 'US';
+    }
+    
+    // Canadian cities
+    if (locationLower.includes('toronto') || locationLower.includes('vancouver') || 
+        locationLower.includes('montreal') || locationLower.includes('canada') ||
+        locationLower.includes('calgary') || locationLower.includes('ottawa')) {
+      return 'CA';
+    }
+    
+    // Iranian cities
+    if (locationLower.includes('tehran') || locationLower.includes('isfahan') || 
+        locationLower.includes('tabriz') || locationLower.includes('iran') ||
+        locationLower.includes('shiraz') || locationLower.includes('mashhad')) {
+      return 'IR';
+    }
+    
+    // UK cities
+    if (locationLower.includes('london') || locationLower.includes('manchester') || 
+        locationLower.includes('birmingham') || locationLower.includes('uk') ||
+        locationLower.includes('england') || locationLower.includes('scotland') ||
+        locationLower.includes('wales') || locationLower.includes('britain')) {
+      return 'GB';
+    }
+    
+    // Australian cities
+    if (locationLower.includes('sydney') || locationLower.includes('melbourne') || 
+        locationLower.includes('brisbane') || locationLower.includes('australia') ||
+        locationLower.includes('perth') || locationLower.includes('adelaide')) {
+      return 'AU';
+    }
+    
+    // Default to fallback country
+    return fallbackCountry;
+  };
+
   // Function to suggest nearby places based on user's request
-  const suggestNearbyPlaces = async (requestType, userCountry) => {
+  const suggestNearbyPlaces = async (requestType, userCountry, mentionedLocation = null) => {
     // Define nearby cities based on different countries and regions
     const nearbyPlaces = {
       'PK': { // Pakistan
@@ -162,6 +228,150 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
           'Murree, Pakistan', 'Skardu, Pakistan', 'Chitral, Pakistan',
           'Hunza Valley, Pakistan', 'Kaghan Valley, Pakistan'
         ]
+      },
+      'TR': { // Turkey (for Istanbul area)
+        'colder': [
+          'Ankara, Turkey', 'Bursa, Turkey', 'Eskişehir, Turkey',
+          'Samsun, Turkey', 'Trabzon, Turkey', 'Erzurum, Turkey'
+        ],
+        'warmer': [
+          'Antalya, Turkey', 'Izmir, Turkey', 'Adana, Turkey',
+          'Mersin, Turkey', 'Bodrum, Turkey', 'Marmaris, Turkey'
+        ],
+        'rainy': [
+          'Rize, Turkey', 'Artvin, Turkey', 'Giresun, Turkey',
+          'Trabzon, Turkey', 'Ordu, Turkey', 'Samsun, Turkey'
+        ],
+        'snowy': [
+          'Erzurum, Turkey', 'Kars, Turkey', 'Ağrı, Turkey',
+          'Van, Turkey', 'Ardahan, Turkey', 'Bingöl, Turkey'
+        ],
+        'coastal': [
+          'Antalya, Turkey', 'Bodrum, Turkey', 'Marmaris, Turkey',
+          'Izmir, Turkey', 'Mersin, Turkey', 'Trabzon, Turkey'
+        ],
+        'mountain': [
+          'Cappadocia, Turkey', 'Mount Ararat, Turkey', 'Uludağ, Turkey',
+          'Palandöken, Turkey', 'Erciyes, Turkey'
+        ]
+      },
+      'US': { // United States (California and general US)
+        'colder': [
+          'Seattle, WA', 'Minneapolis, MN', 'Chicago, IL',
+          'Boston, MA', 'Denver, CO', 'Salt Lake City, UT'
+        ],
+        'warmer': [
+          'Phoenix, AZ', 'Las Vegas, NV', 'Miami, FL',
+          'San Diego, CA', 'Los Angeles, CA', 'Austin, TX'
+        ],
+        'rainy': [
+          'Seattle, WA', 'Portland, OR', 'New Orleans, LA',
+          'Atlanta, GA', 'Jacksonville, FL', 'Birmingham, AL'
+        ],
+        'snowy': [
+          'Denver, CO', 'Minneapolis, MN', 'Chicago, IL',
+          'Buffalo, NY', 'Salt Lake City, UT', 'Anchorage, AK'
+        ],
+        'coastal': [
+          'San Francisco, CA', 'Los Angeles, CA', 'San Diego, CA',
+          'Miami, FL', 'New York, NY', 'Seattle, WA'
+        ],
+        'mountain': [
+          'Denver, CO', 'Salt Lake City, UT', 'Bozeman, MT',
+          'Flagstaff, AZ', 'Aspen, CO', 'Jackson, WY'
+        ]
+      },
+      'CA': { // Canada  
+        'colder': [
+          'Winnipeg, MB', 'Edmonton, AB', 'Quebec City, QC',
+          'Ottawa, ON', 'Halifax, NS', 'Yellowknife, NT'
+        ],
+        'warmer': [
+          'Vancouver, BC', 'Victoria, BC', 'Toronto, ON',
+          'Montreal, QC', 'Calgary, AB', 'Windsor, ON'
+        ],
+        'rainy': [
+          'Vancouver, BC', 'Victoria, BC', 'St. John\'s, NL',
+          'Halifax, NS', 'Charlottetown, PE', 'Saint John, NB'
+        ],
+        'snowy': [
+          'Montreal, QC', 'Quebec City, QC', 'Winnipeg, MB',
+          'Edmonton, AB', 'Ottawa, ON', 'Saskatoon, SK'
+        ],
+        'coastal': [
+          'Vancouver, BC', 'Victoria, BC', 'Halifax, NS',
+          'St. John\'s, NL', 'Charlottetown, PE'
+        ],
+        'mountain': [
+          'Calgary, AB', 'Vancouver, BC', 'Banff, AB',
+          'Whistler, BC', 'Jasper, AB'
+        ]
+      },
+      'IR': { // Iran
+        'colder': [
+          'Tabriz, Iran', 'Tehran, Iran', 'Kermanshah, Iran',
+          'Hamadan, Iran', 'Ardabil, Iran', 'Urmia, Iran'
+        ],
+        'warmer': [
+          'Ahvaz, Iran', 'Bandar Abbas, Iran', 'Zahedan, Iran',
+          'Kerman, Iran', 'Yazd, Iran', 'Bushehr, Iran'
+        ],
+        'rainy': [
+          'Rasht, Iran', 'Gorgan, Iran', 'Sari, Iran',
+          'Babol, Iran', 'Lahijan, Iran', 'Astara, Iran'
+        ],
+        'snowy': [
+          'Tabriz, Iran', 'Tehran, Iran', 'Zanjan, Iran',
+          'Sanandaj, Iran', 'Hamadan, Iran', 'Arak, Iran'
+        ],
+        'coastal': [
+          'Bandar Abbas, Iran', 'Bushehr, Iran', 'Kish Island, Iran',
+          'Chabahar, Iran', 'Bandar Lengeh, Iran'
+        ],
+        'mountain': [
+          'Tehran, Iran', 'Tabriz, Iran', 'Kermanshah, Iran',
+          'Hamadan, Iran', 'Shiraz, Iran'
+        ]
+      },
+      'GB': { // United Kingdom
+        'colder': [
+          'Edinburgh, Scotland', 'Glasgow, Scotland', 'Newcastle, England',
+          'Manchester, England', 'Leeds, England', 'Aberdeen, Scotland'
+        ],
+        'warmer': [
+          'London, England', 'Brighton, England', 'Southampton, England',
+          'Plymouth, England', 'Cornwall, England', 'Bristol, England'
+        ],
+        'rainy': [
+          'Manchester, England', 'Liverpool, England', 'Cardiff, Wales',
+          'Glasgow, Scotland', 'Belfast, N. Ireland', 'Preston, England'
+        ],
+        'snowy': [
+          'Edinburgh, Scotland', 'Glasgow, Scotland', 'Newcastle, England',
+          'Leeds, England', 'Sheffield, England'
+        ],
+        'coastal': [
+          'Brighton, England', 'Liverpool, England', 'Plymouth, England',
+          'Southampton, England', 'Cardiff, Wales'
+        ]
+      },
+      'AU': { // Australia
+        'colder': [
+          'Melbourne, VIC', 'Hobart, TAS', 'Canberra, ACT',
+          'Adelaide, SA', 'Sydney, NSW', 'Perth, WA'
+        ],
+        'warmer': [
+          'Darwin, NT', 'Cairns, QLD', 'Brisbane, QLD',
+          'Gold Coast, QLD', 'Townsville, QLD', 'Alice Springs, NT'
+        ],
+        'rainy': [
+          'Darwin, NT', 'Cairns, QLD', 'Brisbane, QLD',
+          'Sydney, NSW', 'Melbourne, VIC'
+        ],
+        'coastal': [
+          'Sydney, NSW', 'Melbourne, VIC', 'Brisbane, QLD',
+          'Perth, WA', 'Adelaide, SA', 'Gold Coast, QLD'
+        ]
       }
     };
 
@@ -185,11 +395,17 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
       ]
     };
 
-    // Get suggestions based on user's country first, then global
+    // Determine the region to use for suggestions
+    const targetRegion = mentionedLocation ? getRegionFromLocation(mentionedLocation, userCountry) : userCountry;
+    
+    console.log('Target region for suggestions:', targetRegion);
+    console.log('Mentioned location:', mentionedLocation);
+    
+    // Get suggestions based on target region first, then global
     let suggestions = [];
     
-    if (nearbyPlaces[userCountry] && nearbyPlaces[userCountry][requestType]) {
-      suggestions = [...nearbyPlaces[userCountry][requestType]];
+    if (nearbyPlaces[targetRegion] && nearbyPlaces[targetRegion][requestType]) {
+      suggestions = [...nearbyPlaces[targetRegion][requestType]];
     } else if (globalSuggestions[requestType]) {
       suggestions = [...globalSuggestions[requestType]];
     }
@@ -240,7 +456,7 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
     return null;
   };
 
-  // Enhanced function to fetch weather data for any location with geolocation awareness
+  // Enhanced function to fetch weather data for any location using One Call 3.0 API
   const fetchWeatherForLocation = async (location) => {
     try {
       const API_KEY = process.env.REACT_APP_OPENWEATHER_API_KEY;
@@ -248,73 +464,166 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
         throw new Error('Weather API key not configured');
       }
 
-      // First, try direct search without geolocation filtering
-      let response = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(location)}&appid=${API_KEY}&units=metric`
+      // First get coordinates from city name using Geocoding API
+      const geoResponse = await fetch(
+        `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(location)}&limit=1&appid=${API_KEY}`
       );
       
-      // If direct search works, use it (this handles major cities and countries correctly)
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Add distance info if user location is available
+      if (!geoResponse.ok) {
+        throw new Error('Failed to find location coordinates');
+      }
+      
+      const geoData = await geoResponse.json();
+      if (!geoData.length) {
+        // If direct search fails and user location is available, try geolocation assistance
         if (userLocation) {
-          const distance = calculateDistance(
-            userLocation.latitude, 
-            userLocation.longitude, 
-            data.coord.lat, 
-            data.coord.lon
-          );
-          data.locationInfo = {
-            fullName: `${data.name}, ${data.sys.country}`,
-            distance: Math.round(distance),
-            isNearUser: distance < 100
-          };
+          try {
+            const targetCity = await findClosestCity(location, userLocation.latitude, userLocation.longitude);
+            if (targetCity) {
+              geoData.push({
+                name: targetCity.name,
+                country: targetCity.country,
+                lat: targetCity.lat,
+                lon: targetCity.lon
+              });
+            }
+          } catch (geoError) {
+            console.error('Geolocation search failed:', geoError);
+          }
         }
         
-        return data;
-      }
-
-      // If direct search fails (404), try with geolocation assistance for ambiguous names
-      if (response.status === 404 && userLocation) {
-        try {
-          const targetCity = await findClosestCity(location, userLocation.latitude, userLocation.longitude);
-          
-          if (targetCity) {
-            const geoResponse = await fetch(
-              `https://api.openweathermap.org/data/2.5/weather?lat=${targetCity.lat}&lon=${targetCity.lon}&appid=${API_KEY}&units=metric`
-            );
-            
-            if (geoResponse.ok) {
-              const data = await geoResponse.json();
-              data.locationInfo = {
-                fullName: targetCity.fullName,
-                distance: targetCity.distance || 0,
-                isNearUser: targetCity.distance ? targetCity.distance < 100 : false
-              };
-              return data;
-            }
-          }
-        } catch (geoError) {
-          console.error('Geolocation search failed:', geoError);
+        if (!geoData.length) {
+          throw new Error(`Location "${location}" not found. Please check the spelling and try again.`);
         }
       }
+      
+      const { lat, lon, name, country } = geoData[0];
+      
+      // Try One Call 3.0 API first
+      try {
+        const weatherResponse = await fetch(
+          `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&exclude=minutely,hourly,alerts&units=metric&appid=${API_KEY}`
+        );
+        
+        if (weatherResponse.ok) {
+          const weatherData = await weatherResponse.json();
+          
+          console.log('One Call 3.0 API Response:', weatherData);
+          
+          // Check if the response has the expected structure
+          if (!weatherData.current || !weatherData.current.temp) {
+            console.log('Invalid One Call 3.0 response structure, falling back');
+            throw new Error('Invalid API response structure');
+          }
+          const transformedData = {
+            coord: { lon: lon, lat: lat },
+            weather: weatherData.current.weather,
+            base: "stations",
+            main: {
+              temp: weatherData.current.temp,
+              feels_like: weatherData.current.feels_like,
+              temp_min: weatherData.daily?.[0]?.temp?.min || weatherData.current.temp,
+              temp_max: weatherData.daily?.[0]?.temp?.max || weatherData.current.temp,
+              pressure: weatherData.current.pressure,
+              humidity: weatherData.current.humidity,
+              sea_level: weatherData.current.pressure,
+              grnd_level: weatherData.current.pressure
+            },
+            visibility: weatherData.current.visibility || 10000,
+            wind: {
+              speed: weatherData.current.wind_speed,
+              deg: weatherData.current.wind_deg,
+              gust: weatherData.current.wind_gust
+            },
+            clouds: {
+              all: weatherData.current.clouds
+            },
+            dt: weatherData.current.dt,
+            sys: {
+              type: 2,
+              id: 2000000,
+              country: country,
+              sunrise: weatherData.current.sunrise,
+              sunset: weatherData.current.sunset
+            },
+            timezone: weatherData.timezone_offset,
+            id: Math.floor(Math.random() * 1000000),
+            name: name,
+            cod: 200,
+            // Include daily forecast for WeatherCard
+            daily: weatherData.daily
+          };
 
-      // If everything fails, throw appropriate error
-      if (response.status === 404) {
-        throw new Error(`City "${location}" not found. Please check the spelling.`);
+          // Add location information for display
+          if (userLocation) {
+            const distance = calculateDistance(
+              userLocation.latitude, 
+              userLocation.longitude, 
+              lat, 
+              lon
+            );
+            transformedData.locationInfo = {
+              fullName: `${name}, ${country}`,
+              distance: Math.round(distance),
+              isNearUser: distance < 100
+            };
+          }
+
+          return transformedData;
+        }
+      } catch (oneCallError) {
+        console.log('One Call 3.0 API failed, trying fallback:', oneCallError.message);
       }
       
-      throw new Error('Failed to fetch weather data');
+      // Fallback to Current Weather API 2.5
+      console.log('Using Current Weather API 2.5 fallback for:', name);
+      const fallbackResponse = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=metric&appid=${API_KEY}`
+      );
       
+      if (!fallbackResponse.ok) {
+        console.error('Fallback API also failed with status:', fallbackResponse.status);
+        throw new Error('Failed to fetch weather data from both APIs');
+      }
+      
+      const weatherData = await fallbackResponse.json();
+      console.log('Current Weather API Response:', weatherData);
+      
+      // Add location information for display  
+      if (userLocation) {
+        const distance = calculateDistance(
+          userLocation.latitude, 
+          userLocation.longitude, 
+          lat, 
+          lon
+        );
+        weatherData.locationInfo = {
+          fullName: `${name}, ${country}`,
+          distance: Math.round(distance),
+          isNearUser: distance < 100
+        };
+      }
+      
+      return weatherData;
     } catch (error) {
-      throw error;
+      console.error('Weather fetch error:', error);
+      throw new Error(error.message || 'Failed to fetch weather data');
     }
   };
 
   // Enhanced function to detect location mentions in user messages
   const extractLocationFromMessage = (message) => {
     const lowerMessage = message.toLowerCase();
+    
+    // Skip common weather phrases that aren't locations
+    const nonLocationPhrases = [
+      'the weather', 'weather like', 'weather today', 'weather now',
+      'how\'s the weather', 'what\'s the weather', 'weather forecast'
+    ];
+    
+    if (nonLocationPhrases.some(phrase => lowerMessage.includes(phrase) && !lowerMessage.includes(' in ') && !lowerMessage.includes(' at '))) {
+      return null;  // This is a general weather query, not location-specific
+    }
     
     // Check for single location name first (like "turkey", "london", etc.)
     const words = lowerMessage.split(/\s+/);
@@ -324,7 +633,12 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
         'turkey', 'london', 'paris', 'tokyo', 'sydney', 'moscow', 'delhi', 
         'beijing', 'bangkok', 'singapore', 'dubai', 'cairo', 'stockholm',
         'oslo', 'madrid', 'rome', 'berlin', 'vienna', 'prague', 'budapest',
-        'karachi', 'lahore', 'islamabad', 'mumbai', 'kolkata', 'chennai'
+        'karachi', 'lahore', 'islamabad', 'mumbai', 'kolkata', 'chennai',
+        // US states and locations
+        'california', 'texas', 'florida', 'newyork', 'chicago', 'boston',
+        'seattle', 'miami', 'denver', 'phoenix', 'atlanta', 'detroit',
+        'mississippi', 'alabama', 'georgia', 'nevada', 'oregon', 'washington',
+        'america', 'usa'
       ];
       
       if (commonLocations.includes(words[0])) {
@@ -339,6 +653,10 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
     
     // Common patterns for location requests
     const locationPatterns = [
+      // Specific multi-word locations first
+      /(?:colder|warmer|hotter|cooler|places?)\s+(?:in|near|around|close\s+to|by)\s+(united states|the united states)(?:\s|$)/,
+      /(?:in|near|around|close\s+to|by)\s+(united states|the united states)(?:\s|$)/,
+      
       // "What is [city] like" patterns - more specific
       /what\s+is\s+([a-zA-Z\s,.-]+?)\s+like(?:\s+today)?(?:\?|$|\.)/,
       /what'?s\s+([a-zA-Z\s,.-]+?)\s+like(?:\s+today)?(?:\?|$|\.)/,
@@ -349,6 +667,11 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
       /weather for ([a-zA-Z\s,.-]+?)(?:\?|$|\.)/,
       /how.*is.*weather.*in ([a-zA-Z\s,.-]+?)(?:\?|$|\.)/,
       /what.*weather.*like.*in ([a-zA-Z\s,.-]+?)(?:\?|$|\.)/,
+      
+      // Location context patterns (near, around, close to, in) - improved  
+      /(?:colder|warmer|hotter|cooler|places?)\s+(?:in|near|around|close\s+to|by)\s+([a-zA-Z\s,.-]+?)(?:\s|$)/,
+      /(?:near|around|close\s+to|by|in)\s+([a-zA-Z\s,.-]+?)(?:\s|$)/,
+      /places?\s+(?:in|near|around|close\s+to|by)\s+([a-zA-Z\s,.-]+?)(?:\s|$)/,
       
       // Contextual questions (like "how's it in new york")
       /how'?s?\s+it\s+in\s+([a-zA-Z\s,.-]+?)(?:\?|$|\.)/,
@@ -387,6 +710,11 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
   };
 
   const formatWeatherResponse = (weatherData, location, question) => {
+    // Safety checks to prevent undefined errors
+    if (!weatherData || !weatherData.main || !weatherData.weather || !weatherData.weather[0]) {
+      return `⚠️ Weather data for "${location}" is incomplete. Please try again or ask about a different location.`;
+    }
+    
     const temp = Math.round(weatherData.main.temp);
     const feelsLike = Math.round(weatherData.main.feels_like);
     const condition = weatherData.weather[0].description;
@@ -465,13 +793,36 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
       } else {
         // Check if user is asking for place suggestions (colder, warmer, etc.)
         const requestType = detectRequestType(currentMessage);
+        console.log('Detected request type:', requestType, 'for message:', currentMessage);
         
-        if (requestType && userLocation && userCity) {
+        if (requestType) {
           try {
-            const suggestions = await suggestNearbyPlaces(
-              requestType, 
-              userCity.country || 'PK'
-            );
+            console.log('Step 1: Starting suggestion logic for request type:', requestType);
+            
+            // Check if user mentioned a specific location in their request
+            const mentionedLocation = extractLocationFromMessage(currentMessage);
+            console.log('Step 2: Extracted location:', mentionedLocation);
+            
+            let countryCode = 'PK'; // Default fallback
+            console.log('Step 3: Default country code:', countryCode);
+            
+            // If user has location data, use it as fallback
+            if (userCity && userCity.country) {
+              countryCode = userCity.country;
+              console.log('Step 4: Using user country code:', countryCode);
+            }
+            
+            // If a specific location is mentioned, use that for context (priority over user location)
+            if (mentionedLocation) {
+              // Use the same region detection logic
+              const detectedRegion = getRegionFromLocation(mentionedLocation, countryCode);
+              console.log('Step 5: Detected region from location:', detectedRegion, 'for location:', mentionedLocation);
+              countryCode = detectedRegion;
+            }
+            
+            console.log('Step 6: Final country code for suggestions:', countryCode);
+            const suggestions = await suggestNearbyPlaces(requestType, countryCode, mentionedLocation);
+            console.log('Step 7: Got suggestions:', suggestions);
             
             if (suggestions.length > 0) {
               // Automatically fetch weather for the first suggestion and update card
@@ -486,7 +837,11 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
               // Create response with suggestion and weather data
               const weatherInfo = formatWeatherResponse(weatherDataResult, firstSuggestion, `weather in ${firstSuggestion}`);
               
-              botResponse = `🎯 Based on your location in ${userCity.fullName}, here are some nearby ${requestType} places:\n\n` +
+              const locationContext = mentionedLocation ? 
+                `near ${mentionedLocation}` : 
+                (userCity ? `your location in ${userCity.fullName}` : 'your area');
+              
+              botResponse = `🎯 Based on ${locationContext}, here are some nearby ${requestType} places:\n\n` +
                 `🔥 **${firstSuggestion}** (showing in weather card above):\n${weatherInfo}\n\n` +
                 `📍 Other nearby options:\n${suggestions.slice(1).map(place => `• ${place}`).join('\n')}\n\n` +
                 `Just ask "What's [city name] like?" to see weather for any of these places! 🌟`;
@@ -494,6 +849,13 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
               botResponse = `I'd be happy to suggest ${requestType} places near you! However, I don't have enough local data for your area. Try asking about specific cities you're interested in! 🌍`;
             }
           } catch (error) {
+            console.error('Error in suggestion logic:', error);
+            console.error('Error details:', {
+              requestType,
+              mentionedLocation: extractLocationFromMessage(currentMessage),
+              userCity,
+              userLocation
+            });
             botResponse = `I'd love to suggest ${requestType} places near you! Try asking about specific cities like "What's Murree like?" or "How's Karachi today?" 🌤️`;
           }
         } else {
@@ -514,8 +876,50 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
               botResponse = `I couldn't find weather data for "${requestedLocation}". ${error.message} Please try with a different city name or check the spelling.`;
             }
           } else {
-            // General weather question - provide helpful response
-            botResponse = "I'm here to help with weather questions! Try asking about specific places like:\n• 'What's Tokyo like?'\n• 'How's London today?'\n• 'Temperature in Paris?'\n• 'Is it raining in New York?'\n\nOr if you're looking for suggestions, try:\n• 'Suggest me a colder place'\n• 'Suggest me a warmer place' 🌍";
+            // If no specific location mentioned, check if it's a general weather query and use user location
+            if (userCity && (currentMessage.toLowerCase().includes('weather') || 
+                            currentMessage.toLowerCase().includes("how's") ||
+                            currentMessage.toLowerCase().includes("what's") ||
+                            currentMessage.toLowerCase().match(/^(weather|how|what)/))) {
+              // Use user's location for general weather queries
+              try {
+                // Extract and clean city name more aggressively
+                let cityName = userCity.name || userCity.fullName.split(',')[0];
+                
+                // Clean up common administrative suffixes and complex names
+                cityName = cityName
+                  .replace(/\s+(City|Tehsil|District|Division|Metropolitan|Metro|Municipality|County|Borough|Township|Ward|Region|Province|State)\b/gi, '')
+                  .replace(/\s+(Urban|Rural|Central|North|South|East|West)\b/gi, '')
+                  .replace(/\s+Area\b/gi, '')
+                  .trim();
+                
+                // For complex Pakistani city names, try to extract the main city
+                if (cityName.includes('Faisalabad')) {
+                  cityName = 'Faisalabad';
+                } else if (cityName.includes('Lahore')) {
+                  cityName = 'Lahore'; 
+                } else if (cityName.includes('Karachi')) {
+                  cityName = 'Karachi';
+                } else if (cityName.includes('Islamabad')) {
+                  cityName = 'Islamabad';
+                }
+                
+                console.log('Cleaned city name for weather:', cityName, 'from original:', userCity.fullName);
+                
+                const locationWeatherData = await fetchWeatherForLocation(cityName);
+                botResponse = `🌍 Here's the weather in your area (${userCity.fullName}):\n\n${formatWeatherResponse(locationWeatherData, cityName, currentMessage)}`;
+                
+                // Update the main weather card with the user's location data
+                if (onWeatherUpdate) {
+                  onWeatherUpdate(locationWeatherData);
+                }
+              } catch (error) {
+                botResponse = `I couldn't get weather data for your location (${userCity.fullName}). Please try asking about a specific city! 🌤️`;
+              }
+            } else {
+              // General weather question - provide helpful response
+              botResponse = "I'm here to help with weather questions! Try asking about specific places like:\n• 'What's Tokyo like?'\n• 'How's London today?'\n• 'Temperature in Paris?'\n• 'Is it raining in New York?'\n\nOr if you're looking for suggestions, try:\n• 'Suggest me a colder place'\n• 'Suggest me a warmer place' 🌍";
+            }
           }
         }
       }

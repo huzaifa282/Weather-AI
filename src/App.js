@@ -47,19 +47,38 @@ function App() {
         throw new Error('⚠️ API key is missing or not configured!\n\n1. Get your FREE API key from: https://openweathermap.org/api\n2. Edit .env file and replace with your real API key\n3. Restart the server with: npm start');
       }
 
-      const response = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric`
+      // First get coordinates from city name
+      const geoResponse = await fetch(
+        `https://api.openweathermap.org/geo/1.0/direct?q=${city}&limit=1&appid=${API_KEY}`
       );
       
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('City not found. Please check the spelling and try again.');
-        }
+      if (!geoResponse.ok) {
+        throw new Error('Failed to fetch location data. Please try again later.');
+      }
+      
+      const geoData = await geoResponse.json();
+      if (!geoData.length) {
+        throw new Error('City not found. Please check the spelling and try again.');
+      }
+      
+      const { lat, lon } = geoData[0];
+      
+      // Now fetch weather data using One Call 3.0 API
+      const weatherResponse = await fetch(
+        `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&exclude=minutely,hourly,alerts&units=metric&appid=${API_KEY}`
+      );
+      
+      if (!weatherResponse.ok) {
         throw new Error('Failed to fetch weather data. Please try again later.');
       }
       
-      const data = await response.json();
-      setWeatherData(data);
+      const weatherData = await weatherResponse.json();
+      
+      // Add city name to the response for display purposes
+      weatherData.name = geoData[0].name;
+      weatherData.sys = { country: geoData[0].country };
+      
+      setWeatherData(weatherData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -77,16 +96,37 @@ function App() {
         throw new Error('⚠️ API key is missing or not configured!\n\n1. Get your FREE API key from: https://openweathermap.org/api\n2. Edit .env file and replace with your real API key\n3. Restart the server with: npm start');
       }
 
-      const response = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`
+      // Use One Call 3.0 API directly with coordinates
+      const weatherResponse = await fetch(
+        `https://api.openweathermap.org/data/3.0/onecall?lat=${lat}&lon=${lon}&exclude=minutely,hourly,alerts&units=metric&appid=${API_KEY}`
       );
       
-      if (!response.ok) {
+      if (!weatherResponse.ok) {
         throw new Error('Failed to fetch weather data. Please try again later.');
       }
       
-      const data = await response.json();
-      setWeatherData(data);
+      const weatherData = await weatherResponse.json();
+      
+      // Get city name from reverse geocoding for display purposes
+      try {
+        const geoResponse = await fetch(
+          `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${API_KEY}`
+        );
+        
+        if (geoResponse.ok) {
+          const geoData = await geoResponse.json();
+          if (geoData.length > 0) {
+            weatherData.name = geoData[0].name;
+            weatherData.sys = { country: geoData[0].country };
+          }
+        }
+      } catch (geoErr) {
+        // If reverse geocoding fails, use a fallback name
+        weatherData.name = 'Your Location';
+        weatherData.sys = { country: '' };
+      }
+      
+      setWeatherData(weatherData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -111,8 +151,8 @@ function App() {
       <WeatherAnimations weatherData={weatherData} />
       
       {/* Main content */}
-      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-md mx-auto space-y-6">
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center p-3 sm:p-4">
+        <div className="w-full max-w-md lg:max-w-4xl mx-auto space-y-6">
           {/* App header */}
           <div className="text-center animate-fade-in">
             <div className="mb-6">

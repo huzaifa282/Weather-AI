@@ -3,9 +3,17 @@ import React from 'react';
 const WeatherAnimations = ({ weatherData }) => {
   if (!weatherData) return null;
 
-  const condition = weatherData.weather[0].main.toLowerCase();
-  const description = weatherData.weather[0].description.toLowerCase();
-  const isNight = weatherData.weather[0].icon.includes('n');
+  // Handle both old API format and new One Call 3.0 format
+  const currentWeather = weatherData.current || weatherData;
+  const weatherArray = currentWeather.weather || weatherData.weather;
+  
+  if (!weatherArray || !weatherArray[0]) {
+    return null; // No weather data available
+  }
+
+  const condition = weatherArray[0].main.toLowerCase();
+  const description = weatherArray[0].description.toLowerCase();
+  const isNight = weatherArray[0].icon.includes('n');
 
   // Rain animation
   const RainAnimation = () => (
