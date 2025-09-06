@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useGeolocation, findClosestCity, getCityFromCoordinates, calculateDistance } from '../utils/geolocation';
+import { processIntelligentWeatherQuery } from '../utils/grokApi';
 
 const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) => {
   const [messages, setMessages] = useState([
@@ -785,143 +786,35 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
     setIsLoading(true);
 
     try {
+      // Use the AI-powered intelligent query processing with Grok
+      const result = await processIntelligentWeatherQuery(
+        currentMessage,
+        messages, // conversation history
+        weatherData, // current weather data
+        userCity, // user's detected city with country info
+        fetchWeatherForLocation // weather API function
+      );
+
       let botResponse;
 
-      // Check if message is weather-related
-      if (!isWeatherRelated(currentMessage)) {
-        botResponse = "I'm sorry, but I can only help with weather-related questions! 🌤️ Try asking me about temperature, rain, wind, humidity, or weather conditions in different locations like 'What's the weather in Paris?' or 'Is it raining in Tokyo?'";
-      } else {
-        // Check if user is asking for place suggestions (colder, warmer, etc.)
-        const requestType = detectRequestType(currentMessage);
-        console.log('Detected request type:', requestType, 'for message:', currentMessage);
-        
-        if (requestType) {
-          try {
-            console.log('Step 1: Starting suggestion logic for request type:', requestType);
-            
-            // Check if user mentioned a specific location in their request
-            const mentionedLocation = extractLocationFromMessage(currentMessage);
-            console.log('Step 2: Extracted location:', mentionedLocation);
-            
-            let countryCode = 'PK'; // Default fallback
-            console.log('Step 3: Default country code:', countryCode);
-            
-            // If user has location data, use it as fallback
-            if (userCity && userCity.country) {
-              countryCode = userCity.country;
-              console.log('Step 4: Using user country code:', countryCode);
-            }
-            
-            // If a specific location is mentioned, use that for context (priority over user location)
-            if (mentionedLocation) {
-              // Use the same region detection logic
-              const detectedRegion = getRegionFromLocation(mentionedLocation, countryCode);
-              console.log('Step 5: Detected region from location:', detectedRegion, 'for location:', mentionedLocation);
-              countryCode = detectedRegion;
-            }
-            
-            console.log('Step 6: Final country code for suggestions:', countryCode);
-            const suggestions = await suggestNearbyPlaces(requestType, countryCode, mentionedLocation);
-            console.log('Step 7: Got suggestions:', suggestions);
-            
-            if (suggestions.length > 0) {
-              // Automatically fetch weather for the first suggestion and update card
-              const firstSuggestion = suggestions[0];
-              const weatherDataResult = await fetchWeatherForLocation(firstSuggestion);
-              
-              // Update the main weather card with the suggested location
-              if (onWeatherUpdate) {
-                onWeatherUpdate(weatherDataResult);
-              }
-              
-              // Create response with suggestion and weather data
-              const weatherInfo = formatWeatherResponse(weatherDataResult, firstSuggestion, `weather in ${firstSuggestion}`);
-              
-              const locationContext = mentionedLocation ? 
-                `near ${mentionedLocation}` : 
-                (userCity ? `your location in ${userCity.fullName}` : 'your area');
-              
-              botResponse = `🎯 Based on ${locationContext}, here are some nearby ${requestType} places:\n\n` +
-                `🔥 **${firstSuggestion}** (showing in weather card above):\n${weatherInfo}\n\n` +
-                `📍 Other nearby options:\n${suggestions.slice(1).map(place => `• ${place}`).join('\n')}\n\n` +
-                `Just ask "What's [city name] like?" to see weather for any of these places! 🌟`;
-            } else {
-              botResponse = `I'd be happy to suggest ${requestType} places near you! However, I don't have enough local data for your area. Try asking about specific cities you're interested in! 🌍`;
-            }
-          } catch (error) {
-            console.error('Error in suggestion logic:', error);
-            console.error('Error details:', {
-              requestType,
-              mentionedLocation: extractLocationFromMessage(currentMessage),
-              userCity,
-              userLocation
-            });
-            botResponse = `I'd love to suggest ${requestType} places near you! Try asking about specific cities like "What's Murree like?" or "How's Karachi today?" 🌤️`;
-          }
-        } else {
-          // Check if user is asking about a specific location
-          const requestedLocation = extractLocationFromMessage(currentMessage);
-          
-          if (requestedLocation) {
-            // User asked about a specific location - fetch weather for that location
-            try {
-              const locationWeatherData = await fetchWeatherForLocation(requestedLocation);
-              botResponse = formatWeatherResponse(locationWeatherData, requestedLocation, currentMessage);
-              
-              // Update the main weather card with the new location data
-              if (onWeatherUpdate) {
-                onWeatherUpdate(locationWeatherData);
-              }
-            } catch (error) {
-              botResponse = `I couldn't find weather data for "${requestedLocation}". ${error.message} Please try with a different city name or check the spelling.`;
-            }
-          } else {
-            // If no specific location mentioned, check if it's a general weather query and use user location
-            if (userCity && (currentMessage.toLowerCase().includes('weather') || 
-                            currentMessage.toLowerCase().includes("how's") ||
-                            currentMessage.toLowerCase().includes("what's") ||
-                            currentMessage.toLowerCase().match(/^(weather|how|what)/))) {
-              // Use user's location for general weather queries
-              try {
-                // Extract and clean city name more aggressively
-                let cityName = userCity.name || userCity.fullName.split(',')[0];
-                
-                // Clean up common administrative suffixes and complex names
-                cityName = cityName
-                  .replace(/\s+(City|Tehsil|District|Division|Metropolitan|Metro|Municipality|County|Borough|Township|Ward|Region|Province|State)\b/gi, '')
-                  .replace(/\s+(Urban|Rural|Central|North|South|East|West)\b/gi, '')
-                  .replace(/\s+Area\b/gi, '')
-                  .trim();
-                
-                // For complex Pakistani city names, try to extract the main city
-                if (cityName.includes('Faisalabad')) {
-                  cityName = 'Faisalabad';
-                } else if (cityName.includes('Lahore')) {
-                  cityName = 'Lahore'; 
-                } else if (cityName.includes('Karachi')) {
-                  cityName = 'Karachi';
-                } else if (cityName.includes('Islamabad')) {
-                  cityName = 'Islamabad';
-                }
-                
-                console.log('Cleaned city name for weather:', cityName, 'from original:', userCity.fullName);
-                
-                const locationWeatherData = await fetchWeatherForLocation(cityName);
-                botResponse = `🌍 Here's the weather in your area (${userCity.fullName}):\n\n${formatWeatherResponse(locationWeatherData, cityName, currentMessage)}`;
-                
-                // Update the main weather card with the user's location data
-                if (onWeatherUpdate) {
-                  onWeatherUpdate(locationWeatherData);
-                }
-              } catch (error) {
-                botResponse = `I couldn't get weather data for your location (${userCity.fullName}). Please try asking about a specific city! 🌤️`;
-              }
-            } else {
-              // General weather question - provide helpful response
-              botResponse = "I'm here to help with weather questions! Try asking about specific places like:\n• 'What's Tokyo like?'\n• 'How's London today?'\n• 'Temperature in Paris?'\n• 'Is it raining in New York?'\n\nOr if you're looking for suggestions, try:\n• 'Suggest me a colder place'\n• 'Suggest me a warmer place' 🌍";
-            }
-          }
+      if (result.type === 'weather') {
+        // Update the main weather card with new weather data
+        if (onWeatherUpdate && result.weatherData) {
+          onWeatherUpdate(result.weatherData);
         }
+        botResponse = result.message;
+      } else if (result.type === 'comparison') {
+        // For weather comparisons, show the comparison data
+        botResponse = result.message;
+      } else if (result.type === 'suggestions') {
+        // For place suggestions, show the suggestions
+        botResponse = result.message;
+      } else if (result.type === 'error') {
+        // Handle error responses
+        botResponse = result.message;
+      } else {
+        // Fallback for unexpected response types
+        botResponse = result.message || "I'm here to help with weather! Try asking about specific places or weather conditions. �️";
       }
 
       const botMessage = {
@@ -932,9 +825,11 @@ const WeatherChatbot = ({ weatherData, isCelsius, onClose, onWeatherUpdate }) =>
 
       setMessages(prev => [...prev, botMessage]);
     } catch (error) {
+      console.error('Error in AI weather processing:', error);
+      
       const errorMessage = {
         type: 'bot',
-        content: "I'm sorry, I encountered an error. Please try asking your weather question again! 🌤️",
+        content: "I'm sorry, AI intelligence is temporarily unavailable. Please try asking your weather question again! 🌤️",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);

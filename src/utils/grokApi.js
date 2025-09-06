@@ -1,11 +1,322 @@
 /**
- * Grok AI integration for natural language weather queries
- * Handles structured JSON extraction from user queries
+ * Enhanced Grok AI integration for intelligent weather queries
+ * This function acts as the main intelligence layer that:
+ * 1. Understands user intent and context
+ * 2. Decides which weather APIs to call
+ * 3. Generates contextual responses
  */
 
 // Use environment variable for API URL
-const GROK_API_URL = 'https://api.x.ai/v1/chat/completions';
+const GROK_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROK_API_KEY = process.env.REACT_APP_GROQ_API_KEY;
+
+// Export helper functions
+export { 
+  handleWeatherFetch, 
+  handleWeatherComparison, 
+  handlePlaceSuggestions,
+  generateWeatherMessage,
+  generateComparisonMessage,
+  generateSuggestionMessage
+};
+
+/**
+ * Main intelligent weather assistant function
+ * Uses Grok to understand queries and orchestrate weather API calls
+ */
+export const processIntelligentWeatherQuery = async (
+  userMessage, 
+  conversationHistory = [], 
+  currentWeatherData = null,
+  userLocation = null,
+  fetchWeatherFunction = null
+) => {
+  try {
+    const API_KEY = GROK_API_KEY;
+    
+    console.log('API Key check:', {
+      hasKey: !!API_KEY,
+      keyStart: API_KEY ? API_KEY.substring(0, 10) + '...' : 'None',
+      keyLength: API_KEY ? API_KEY.length : 0
+    });
+    
+    if (!API_KEY || API_KEY === 'your_grok_api_key_here') {
+      console.warn('Grok API key not configured, using fallback');
+      return { 
+        type: 'error', 
+        message: 'AI intelligence not available, using basic weather lookup' 
+      };
+    }
+
+    // Build conversation context with better city extraction
+    const contextMessages = conversationHistory.slice(-6).map(msg => 
+      `${msg.type === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`
+    ).join('\n');
+
+    // Extract recently mentioned cities from conversation
+    const recentCities = [];
+    conversationHistory.slice(-4).forEach(msg => {
+      // Look for city names in weather responses and user queries
+      const cityMatches = msg.content.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),?\s*(?:[A-Z]{2}|[A-Z][a-z]+)?\b/g);
+      if (cityMatches) {
+        cityMatches.forEach(match => {
+          const cleanCity = match.replace(/[,:]/, '').trim();
+          if (cleanCity.length > 2 && !recentCities.includes(cleanCity)) {
+            recentCities.push(cleanCity);
+          }
+        });
+      }
+    });
+
+    const recentCitiesContext = recentCities.length > 0 ? 
+      `\nRECENT CITIES DISCUSSED: ${recentCities.slice(0, 3).join(', ')}` : '';
+
+    // Include current weather context if available
+    let currentWeatherContext = '';
+    if (currentWeatherData) {
+      currentWeatherContext = `
+CURRENT WEATHER DISPLAY: ${currentWeatherData.name}, ${currentWeatherData.sys?.country}
+Temperature: ${Math.round(currentWeatherData.main?.temp)}°C
+Condition: ${currentWeatherData.weather?.[0]?.description}
+`;
+    }
+
+    // Include user location context if available
+    let userLocationContext = '';
+    if (userLocation) {
+      userLocationContext = `
+USER LOCATION: Near ${userLocation.name || 'detected location'}
+Coordinates: ${userLocation.latitude}, ${userLocation.longitude}
+`;
+    }
+
+    const systemPrompt = `You are an intelligent weather assistant with access to real-time weather APIs and location services. Your job is to:
+
+1. UNDERSTAND the user's query in context of the conversation
+2. DECIDE what weather data to fetch based on user location and preferences
+3. GENERATE an appropriate response plan that provides relevant weather information
+
+CONVERSATION CONTEXT:
+${contextMessages}${recentCitiesContext}
+
+${currentWeatherContext}
+${userLocationContext}
+
+ADVANCED CAPABILITIES:
+- Fetch current weather for any city worldwide with detailed conditions
+- Compare weather between multiple locations with insights
+- Suggest places based on weather preferences (colder, warmer, rainy, sunny, etc.)
+- Use user's current location for intelligent suggestions
+- Understand context from previous conversation and handle follow-ups
+- Parse complex queries like "somewhere warm for vacation" or "colder than here"
+- Provide travel and activity recommendations based on weather
+
+INTELLIGENT LOCATION HANDLING:
+- If user says "here", "my location", "where I am" → use user_current_location
+- For suggestions like "colder place", use user's location as reference point
+- Understand relative terms: "warmer than London", "colder than here", etc.
+- Detect vacation/travel intent and suggest appropriate destinations
+- Consider regional preferences and proximity for suggestions
+- ALWAYS prioritize user's home region for suggestions
+
+REGION DETECTION RULES:
+- If user location shows PK/Pakistan → use region "PK" for suggestions
+- If user location shows US/United States → use region "US" for suggestions  
+- If user location shows TR/Turkey → use region "TR" for suggestions
+- If user location shows IN/India → use region "IN" for suggestions
+- If user location shows GB/UK → use region "GB" for suggestions
+- Only use "global" if no specific region can be determined
+- For location-based suggestions (warmer/colder), ALWAYS use user's region first
+
+CONTEXT AWARENESS:
+- Remember the last discussed location from conversation history
+- For queries like "weather in 2 days", "tomorrow", "forecast" → use last mentioned location OR user_current_location
+- If conversation history shows a city was recently discussed, use that as default context
+- Parse relative time references: "tomorrow", "in 2 days", "next week"
+- Maintain conversational flow by understanding implicit location references
+
+RESPONSE FORMAT (JSON only):
+{
+  "action": "FETCH_WEATHER|COMPARE_WEATHER|SUGGEST_PLACES|PROVIDE_CONTEXT|GENERAL_RESPONSE",
+  "locations": ["city1", "city2", ...], // Cities to fetch weather for
+  "suggestionType": "colder|warmer|rainy|snowy|sunny|coastal|mountain|vacation|dry|humid|windy", // For suggestions
+  "region": "US|PK|TR|IR|GB|CA|AU|EU|global", // Target region for suggestions
+  "referenceLocation": "city_name", // For comparisons like "colder than X"
+  "responseStyle": "detailed|simple|comparison|suggestion|travel|conversational", 
+  "context": "What this query is about in relation to conversation",
+  "userIntent": "What the user actually wants to know",
+  "reasoning": "Why you chose this action and these locations",
+  "conversationalTone": "friendly|helpful|enthusiastic|informative", // How to respond
+  "includeContext": true // Always include conversational context
+}
+
+ENHANCED PARSING EXAMPLES:
+
+User: "How's the weather?" 
+→ { "action": "FETCH_WEATHER", "locations": ["user_current_location"], "responseStyle": "detailed" }
+
+User: "Suggest somewhere colder" or "I want a colder place"
+→ { "action": "SUGGEST_PLACES", "suggestionType": "colder", "region": "PK", "referenceLocation": "user_current_location", "responseStyle": "conversational", "conversationalTone": "helpful" }
+
+User: "suggest me a warmer place" (user in Pakistan)
+→ { "action": "SUGGEST_PLACES", "suggestionType": "warmer", "region": "PK", "responseStyle": "conversational", "conversationalTone": "helpful" }
+
+User: "Any warm places for vacation?"
+→ { "action": "SUGGEST_PLACES", "suggestionType": "vacation", "region": "PK", "responseStyle": "travel", "conversationalTone": "enthusiastic" }
+
+User: "Suggest me a dry place" or "I need somewhere with low humidity"
+→ { "action": "SUGGEST_PLACES", "suggestionType": "dry", "region": "global", "responseStyle": "conversational", "conversationalTone": "helpful" }
+
+User: "Somewhere warmer than London"
+→ { "action": "SUGGEST_PLACES", "suggestionType": "warmer", "referenceLocation": "London", "region": "global", "responseStyle": "conversational" }
+
+User: "Compare weather in Tokyo and Seoul"
+→ { "action": "COMPARE_WEATHER", "locations": ["Tokyo", "Seoul"], "responseStyle": "comparison", "conversationalTone": "informative" }
+
+User: "What about rainy places?" (context-aware)
+→ { "action": "SUGGEST_PLACES", "suggestionType": "rainy", "region": "global", "responseStyle": "conversational", "conversationalTone": "friendly" }
+
+User: "weather in 2 days" or "tomorrow's weather" (context-aware, use last discussed location or user location)
+→ { "action": "FETCH_WEATHER", "locations": ["user_current_location"], "responseStyle": "conversational", "context": "Future weather request", "conversationalTone": "helpful" }
+
+User: "what about tomorrow?" (after discussing Faisalabad weather)
+→ { "action": "FETCH_WEATHER", "locations": ["Faisalabad"], "responseStyle": "conversational", "context": "Follow-up weather query for previously discussed location", "conversationalTone": "helpful" }
+
+CONTEXT PARSING RULES:
+- Always check conversation history for recently mentioned cities
+- If user asks about time without location, use the most recent location discussed
+- If no recent location in conversation, default to user_current_location
+- Make responses conversational and natural, not robotic
+
+TODAY'S DATE: ${new Date().toISOString().split('T')[0]}
+
+Analyze this query intelligently and provide the JSON response:
+
+USER QUERY: "${userMessage}"`;
+
+    const response = await fetch(GROK_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user', 
+            content: userMessage
+          }
+        ],
+        model: 'llama-3.1-8b-instant',
+        temperature: 0.1,
+        max_tokens: 1000
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API Error Details:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorText: errorText
+      });
+      throw new Error(`Grok API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    const grokResponse = data.choices[0].message.content;
+    
+    console.log('Grok raw response:', grokResponse);
+
+    // Parse JSON response
+    let parsedResponse;
+    try {
+      // Extract JSON from response if it's wrapped in text
+      const jsonMatch = grokResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsedResponse = JSON.parse(jsonMatch[0]);
+      } else {
+        parsedResponse = JSON.parse(grokResponse);
+      }
+    } catch (parseError) {
+      console.error('Failed to parse Grok response:', parseError);
+      return {
+        type: 'error',
+        message: 'AI parsing error, please rephrase your question'
+      };
+    }
+
+    console.log('Parsed Grok response:', parsedResponse);
+
+    // Now execute the action that Grok decided
+    return await executeGrokAction(parsedResponse, fetchWeatherFunction, userLocation);
+
+  } catch (error) {
+    console.error('Grok processing error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack
+    });
+    return {
+      type: 'error',
+      message: `AI intelligence temporarily unavailable. Error: ${error.message}`
+    };
+  }
+};
+
+/**
+ * Execute the action that Grok AI decided upon
+ */
+async function executeGrokAction(grokDecision, fetchWeatherFunction, userLocation) {
+  const { action, locations, suggestionType, region, responseStyle, context, userIntent, reasoning, conversationalTone } = grokDecision;
+  
+  console.log('Executing Grok action:', action, 'for locations:', locations);
+
+  try {
+    switch (action) {
+      case 'FETCH_WEATHER':
+        return await handleWeatherFetch(locations, responseStyle, fetchWeatherFunction, userLocation, grokDecision);
+        
+      case 'COMPARE_WEATHER':
+        return await handleWeatherComparison(locations, fetchWeatherFunction, grokDecision);
+        
+      case 'SUGGEST_PLACES':
+        return await handlePlaceSuggestions(suggestionType, region, userLocation, grokDecision);
+        
+      case 'PROVIDE_CONTEXT':
+        return {
+          type: 'context',
+          message: context || userIntent || 'Let me help you with weather information! What would you like to know? 🌤️',
+          requiresWeatherData: false,
+          conversationalTone: conversationalTone
+        };
+        
+      case 'GENERAL_RESPONSE':
+        return {
+          type: 'general',
+          message: userIntent || 'I can help you with weather information for any location worldwide! Just ask about a city, or say things like "suggest somewhere warmer" for recommendations! 🌟',
+          requiresWeatherData: false,
+          conversationalTone: conversationalTone
+        };
+        
+      default:
+        return {
+          type: 'error',
+          message: 'I\'m not sure how to help with that. Try asking about weather for a specific location, or ask for suggestions like "suggest somewhere colder"! 😊'
+        };
+    }
+  } catch (error) {
+    console.error('Error executing Grok action:', error);
+    return {
+      type: 'error',
+      message: 'Sorry, there was an error processing your request. Please try again! 🤔'
+    };
+  }
+}
 
 /**
  * Get date string for days in the future
@@ -140,7 +451,7 @@ Return JSON only. No explanations.`;
             content: userMessage
           }
         ],
-        model: 'grok-beta',
+        model: 'llama-3.1-8b-instant',
         stream: false,
         temperature: 0.1,
         max_tokens: 500,
@@ -542,3 +853,393 @@ export const formatWeatherResponse = (weatherData, city, date, isCelsius, dateRa
     return `Here's the weather information for ${city} ${timeReference}.`;
   }
 };
+
+/**
+ * Handle weather fetching for specific locations
+ */
+async function handleWeatherFetch(locations, responseStyle, fetchWeatherFunction, userLocation, grokDecision = {}) {
+  if (!locations || locations.length === 0) {
+    return {
+      type: 'error',
+      message: 'No location specified for weather lookup'
+    };
+  }
+
+  try {
+    let targetLocation = locations[0];
+    
+    // Handle special location: user_current_location
+    if (targetLocation === 'user_current_location' && userLocation) {
+      targetLocation = userLocation.name || 'your current location';
+    }
+
+    console.log('Fetching weather for:', targetLocation);
+    
+    if (fetchWeatherFunction) {
+      const weatherData = await fetchWeatherFunction(targetLocation);
+      
+      return {
+        type: 'weather',
+        weatherData: weatherData,
+        location: targetLocation,
+        responseStyle: responseStyle,
+        conversationalTone: grokDecision.conversationalTone,
+        message: generateWeatherMessage(weatherData, responseStyle, targetLocation, grokDecision)
+      };
+    } else {
+      return {
+        type: 'error',
+        message: 'Weather fetching service not available'
+      };
+    }
+  } catch (error) {
+    console.error('Weather fetch error:', error);
+    return {
+      type: 'error',
+      message: `Could not fetch weather for ${locations[0]}. Please check the location name.`
+    };
+  }
+}
+
+/**
+ * Handle weather comparison between multiple locations
+ */
+async function handleWeatherComparison(locations, fetchWeatherFunction) {
+  if (!locations || locations.length < 2) {
+    return {
+      type: 'error', 
+      message: 'I need at least two locations to compare weather'
+    };
+  }
+
+  try {
+    const weatherPromises = locations.map(location => fetchWeatherFunction(location));
+    const weatherResults = await Promise.all(weatherPromises);
+    
+    return {
+      type: 'comparison',
+      weatherData: weatherResults,
+      locations: locations,
+      message: generateComparisonMessage(weatherResults, locations)
+    };
+  } catch (error) {
+    console.error('Weather comparison error:', error);
+    return {
+      type: 'error',
+      message: 'Could not compare weather for those locations'
+    };
+  }
+}
+
+/**
+ * Handle place suggestions based on weather preferences
+ */
+async function handlePlaceSuggestions(suggestionType, region, userLocation, grokDecision = {}) {
+  const suggestions = getPlaceSuggestions(suggestionType, region, userLocation);
+  
+  if (suggestions.length === 0) {
+    return {
+      type: 'error',
+      message: `Sorry, I don't have ${suggestionType} place suggestions for that region right now. Try asking for a different type of place! 🤔`
+    };
+  }
+
+  return {
+    type: 'suggestions',
+    suggestions: suggestions,
+    suggestionType: suggestionType,
+    region: region,
+    userLocationContext: userLocation,
+    conversationalTone: grokDecision.conversationalTone,
+    message: generateSuggestionMessage(suggestions, suggestionType, region, userLocation, grokDecision)
+  };
+}
+
+/**
+ * Generate contextual weather message based on response style
+ */
+function generateWeatherMessage(weatherData, responseStyle, location, grokDecision = {}) {
+  if (!weatherData || !weatherData.main) {
+    return `I couldn't get weather data for ${location} right now. Could you try a different location or check the spelling? 🤔`;
+  }
+
+  const temp = Math.round(weatherData.main.temp);
+  const condition = weatherData.weather[0].description;
+  const feelsLike = Math.round(weatherData.main.feels_like);
+  const city = weatherData.name;
+  const country = weatherData.sys?.country;
+  const humidity = weatherData.main.humidity;
+  const windSpeed = Math.round(weatherData.wind?.speed * 3.6);
+  
+  // Get conversational tone from AI decision
+  const tone = grokDecision.conversationalTone || 'informative';
+  
+  let message = '';
+  
+  switch (responseStyle) {
+    case 'simple':
+      message = `🌤️ ${city}${country ? `, ${country}` : ''}: ${condition}, ${temp}°C`;
+      break;
+      
+    case 'conversational':
+      // More natural, conversational responses
+      let tempFeeling = '';
+      if (feelsLike > temp + 2) tempFeeling = ` (but feels like ${feelsLike}°C - a bit warmer!)`;
+      else if (feelsLike < temp - 2) tempFeeling = ` (feels like ${feelsLike}°C though - cooler than expected!)`;
+      else if (Math.abs(feelsLike - temp) <= 2) tempFeeling = ` (feels just right at ${feelsLike}°C)`;
+      
+      let weatherComment = '';
+      if (condition.includes('clear')) weatherComment = ' Perfect day! ☀️';
+      else if (condition.includes('cloud')) weatherComment = ' Nice and cloudy! ☁️';
+      else if (condition.includes('rain')) weatherComment = ' Bring an umbrella! 🌧️';
+      else if (condition.includes('snow')) weatherComment = ' Snow day! ❄️';
+      
+      message = `🌤️ Right now in ${city}${country ? `, ${country}` : ''}, it's ${temp}°C${tempFeeling} with ${condition}.${weatherComment}\n\n`;
+      
+      // Add helpful context based on conditions
+      if (humidity > 80) message += `💧 It's quite humid at ${humidity}% - you might feel a bit sticky!\n`;
+      else if (humidity < 30) message += `🏜️ Pretty dry air at ${humidity}% humidity - great for your hair! 😄\n`;
+      
+      if (windSpeed > 20) message += `💨 Quite breezy with winds at ${windSpeed} km/h - hold onto your hat!\n`;
+      else if (windSpeed < 5) message += `� Very calm with light winds at ${windSpeed} km/h - peaceful weather!\n`;
+      
+      break;
+      
+    case 'detailed':
+      message = `�🌤️ Weather in ${city}${country ? `, ${country}` : ''}:\n` +
+               `Temperature: ${temp}°C (feels like ${feelsLike}°C)\n` +
+               `Condition: ${condition}\n` +
+               `Humidity: ${humidity}%\n` +
+               `Wind: ${windSpeed} km/h`;
+      break;
+             
+    default:
+      message = `🌤️ ${city}: ${condition}, ${temp}°C (feels like ${feelsLike}°C)`;
+  }
+  
+  return message;
+}
+
+/**
+ * Generate comparison message for multiple weather locations
+ */
+function generateComparisonMessage(weatherResults, locations) {
+  if (!weatherResults || weatherResults.length < 2) {
+    return 'Could not compare weather for those locations.';
+  }
+
+  let comparison = '🔍 Weather Comparison:\n\n';
+  
+  weatherResults.forEach((weather, index) => {
+    if (weather && weather.main) {
+      const temp = Math.round(weather.main.temp);
+      const condition = weather.weather[0].description;
+      comparison += `📍 **${weather.name}**: ${condition}, ${temp}°C\n`;
+    }
+  });
+
+  // Find warmest and coldest
+  const temps = weatherResults
+    .filter(w => w && w.main)
+    .map(w => ({ name: w.name, temp: w.main.temp }));
+    
+  if (temps.length >= 2) {
+    const warmest = temps.reduce((a, b) => a.temp > b.temp ? a : b);
+    const coldest = temps.reduce((a, b) => a.temp < b.temp ? a : b);
+    
+    comparison += `\n🌡️ **${warmest.name}** is warmer (${Math.round(warmest.temp)}°C)\n`;
+    comparison += `❄️ **${coldest.name}** is cooler (${Math.round(coldest.temp)}°C)`;
+  }
+
+  return comparison;
+}
+
+/**
+ * Generate suggestion message for place recommendations
+ */
+function generateSuggestionMessage(suggestions, suggestionType, region, userLocation, grokDecision = {}) {
+  const regionNames = {
+    'US': 'United States',
+    'PK': 'Pakistan', 
+    'TR': 'Turkey',
+    'IR': 'Iran',
+    'IN': 'India',
+    'GB': 'United Kingdom',
+    'CA': 'Canada',
+    'AU': 'Australia',
+    'global': 'worldwide'
+  };
+
+  const regionName = regionNames[region] || region;
+  
+  // Create context-aware introduction with conversational tone
+  let introText = '';
+  if (userLocation && userLocation.city) {
+    const currentLocation = `${userLocation.city}${userLocation.country ? `, ${userLocation.country}` : ''}`;
+    
+    switch (suggestionType) {
+      case 'colder':
+        introText = `❄️ Looking for cooler weather than ${currentLocation}? I've got some great suggestions for you:\n\n`;
+        break;
+      case 'warmer':
+        introText = `☀️ Want somewhere warmer than ${currentLocation}? These places should be perfect:\n\n`;
+        break;
+      case 'dry':
+        introText = `🏜️ Need a break from humidity? Here are some wonderfully dry places to consider:\n\n`;
+        break;
+      case 'humid':
+        introText = `💧 Looking for places with higher humidity? These locations might be what you're after:\n\n`;
+        break;
+      case 'vacation':
+        introText = `🏖️ Perfect vacation spots from your location in ${currentLocation}:\n\n`;
+        break;
+      case 'coastal':
+        introText = `🌊 Beautiful coastal destinations accessible from ${currentLocation}:\n\n`;
+        break;
+      case 'rainy':
+        introText = `🌧️ Places with refreshing rain near ${currentLocation}:\n\n`;
+        break;
+      case 'sunny':
+        introText = `☀️ Sunny destinations that'll brighten your day from ${currentLocation}:\n\n`;
+        break;
+      default:
+        introText = `🎯 Here are some fantastic ${suggestionType} places for you:\n\n`;
+    }
+  } else {
+    // More conversational fallback messages
+    switch (suggestionType) {
+      case 'dry':
+        introText = `🏜️ Perfect! I know some amazing dry places with low humidity:\n\n`;
+        break;
+      case 'humid':
+        introText = `💧 Here are some places known for their higher humidity:\n\n`;
+        break;
+      case 'colder':
+        introText = `❄️ Great choice! Here are some cooler destinations:\n\n`;
+        break;
+      case 'warmer':
+        introText = `☀️ Excellent! These warmer places should be perfect:\n\n`;
+        break;
+      case 'vacation':
+        introText = `�️ Time for a getaway! Here are some amazing vacation spots:\n\n`;
+        break;
+      default:
+        introText = `�🎯 Here are some fantastic ${suggestionType} places in ${regionName}:\n\n`;
+    }
+  }
+  
+  let message = introText;
+  
+  suggestions.slice(0, 5).forEach((place, index) => {
+    const emoji = index === 0 ? '🔥' : index === 1 ? '⭐' : '📍';
+    message += `${emoji} ${place}\n`;
+  });
+  
+  // Add conversational closing with helpful suggestions
+  switch (suggestionType) {
+    case 'dry':
+      message += `\n💡 These places typically have low humidity and less rainfall. Want to check the current weather in any of these? Just ask! 🌟`;
+      break;
+    case 'humid':
+      message += `\n� These places tend to have higher humidity levels. Ask "What's the weather in [city]?" for current conditions! 🌟`;
+      break;
+    default:
+      message += `\n�💬 Ask "What's the weather in [city]?" to get current conditions, or say "compare weather in [city1] and [city2]" for comparisons! 🌟`;
+  }
+  
+  return message;
+}
+
+/**
+ * Get place suggestions based on type and region
+ */
+function getPlaceSuggestions(suggestionType, region, userLocation) {
+  const suggestions = {
+    'US': {
+      'colder': ['Seattle, WA', 'Minneapolis, MN', 'Chicago, IL', 'Boston, MA', 'Denver, CO', 'Anchorage, AK'],
+      'warmer': ['Phoenix, AZ', 'Las Vegas, NV', 'Miami, FL', 'San Diego, CA', 'Austin, TX', 'Honolulu, HI'],
+      'rainy': ['Seattle, WA', 'Portland, OR', 'New Orleans, LA', 'Atlanta, GA', 'Tampa, FL'],
+      'coastal': ['San Francisco, CA', 'Miami, FL', 'New York, NY', 'Seattle, WA', 'Myrtle Beach, SC'],
+      'vacation': ['Hawaii, USA', 'Florida Keys, FL', 'Napa Valley, CA', 'Jackson Hole, WY'],
+      'dry': ['Phoenix, AZ', 'Las Vegas, NV', 'Tucson, AZ', 'Palm Springs, CA', 'Reno, NV'],
+      'humid': ['Miami, FL', 'Houston, TX', 'New Orleans, LA', 'Orlando, FL', 'Tampa, FL']
+    },
+    'PK': {
+      'colder': ['Murree, Pakistan', 'Skardu, Pakistan', 'Chitral, Pakistan', 'Gilgit, Pakistan', 'Swat, Pakistan', 'Naran, Pakistan'],
+      'warmer': ['Karachi, Pakistan', 'Multan, Pakistan', 'Jacobabad, Pakistan', 'Hyderabad, Pakistan', 'Sukkur, Pakistan'],
+      'coastal': ['Karachi, Pakistan', 'Gwadar, Pakistan'],
+      'vacation': ['Hunza Valley, Pakistan', 'Kaghan Valley, Pakistan', 'Fairy Meadows, Pakistan', 'Skardu, Pakistan'],
+      'dry': ['Quetta, Pakistan', 'Bahawalpur, Pakistan', 'Multan, Pakistan', 'Dera Ghazi Khan, Pakistan', 'Jacobabad, Pakistan'],
+      'humid': ['Karachi, Pakistan', 'Lahore, Pakistan', 'Islamabad, Pakistan', 'Peshawar, Pakistan']
+    },
+    'TR': {
+      'colder': ['Ankara, Turkey', 'Erzurum, Turkey', 'Trabzon, Turkey', 'Kars, Turkey'],
+      'warmer': ['Antalya, Turkey', 'Izmir, Turkey', 'Adana, Turkey', 'Mersin, Turkey'],
+      'coastal': ['Antalya, Turkey', 'Bodrum, Turkey', 'Izmir, Turkey', 'Kas, Turkey'],
+      'vacation': ['Cappadocia, Turkey', 'Pamukkale, Turkey', 'Cesme, Turkey'],
+      'dry': ['Ankara, Turkey', 'Konya, Turkey', 'Kayseri, Turkey', 'Afyon, Turkey'],
+      'humid': ['Istanbul, Turkey', 'Rize, Turkey', 'Trabzon, Turkey']
+    },
+    'IN': {
+      'colder': ['Shimla, India', 'Manali, India', 'Darjeeling, India', 'Ooty, India'],
+      'warmer': ['Mumbai, India', 'Chennai, India', 'Hyderabad, India', 'Bangalore, India'],
+      'coastal': ['Goa, India', 'Mumbai, India', 'Chennai, India', 'Kochi, India'],
+      'vacation': ['Kerala, India', 'Rajasthan, India', 'Goa, India', 'Kashmir, India'],
+      'dry': ['Rajasthan, India', 'Jodhpur, India', 'Jaisalmer, India', 'Bikaner, India'],
+      'humid': ['Mumbai, India', 'Kolkata, India', 'Chennai, India', 'Kochi, India']
+    },
+    'GB': {
+      'colder': ['Edinburgh, Scotland', 'Manchester, UK', 'Glasgow, Scotland', 'Newcastle, UK'],
+      'warmer': ['London, UK', 'Brighton, UK', 'Bath, UK', 'Oxford, UK'],
+      'coastal': ['Brighton, UK', 'Liverpool, UK', 'Plymouth, UK', 'Cardiff, Wales'],
+      'vacation': ['Lake District, UK', 'Cornwall, UK', 'Edinburgh, Scotland'],
+      'dry': ['London, UK', 'Cambridge, UK', 'Norwich, UK', 'Canterbury, UK'],
+      'humid': ['Manchester, UK', 'Glasgow, Scotland', 'Belfast, Northern Ireland']
+    },
+    'global': {
+      'colder': ['Reykjavik, Iceland', 'Moscow, Russia', 'Stockholm, Sweden', 'Oslo, Norway', 'Helsinki, Finland'],
+      'warmer': ['Dubai, UAE', 'Bangkok, Thailand', 'Singapore', 'Cairo, Egypt', 'Doha, Qatar'],
+      'rainy': ['London, UK', 'Mumbai, India', 'Singapore', 'Vancouver, Canada', 'Seattle, WA'],
+      'coastal': ['Sydney, Australia', 'Barcelona, Spain', 'Rio de Janeiro, Brazil', 'Nice, France'],
+      'vacation': ['Maldives', 'Bali, Indonesia', 'Santorini, Greece', 'Maui, Hawaii', 'Swiss Alps'],
+      'dry': ['Cairo, Egypt', 'Riyadh, Saudi Arabia', 'Phoenix, AZ', 'Alice Springs, Australia', 'Atacama, Chile'],
+      'humid': ['Singapore', 'Bangkok, Thailand', 'Miami, FL', 'Mumbai, India', 'Jakarta, Indonesia']
+    }
+  };
+
+  let baseSuggestions = suggestions[region]?.[suggestionType] || suggestions['global']?.[suggestionType] || [];
+  
+  // If user location is available, add context-aware filtering and prioritization
+  if (userLocation && userLocation.country) {
+    const userCountry = userLocation.country.toUpperCase();
+    console.log('User location for suggestions:', userLocation);
+    console.log('User country detected:', userCountry);
+    
+    // If region wasn't specified or is global, try to use user's country
+    if (region === 'global' || !region) {
+      const userRegionSuggestions = suggestions[userCountry]?.[suggestionType] || [];
+      if (userRegionSuggestions.length > 0) {
+        console.log(`Using ${userCountry} regional suggestions:`, userRegionSuggestions);
+        baseSuggestions = userRegionSuggestions;
+      }
+    }
+    
+    // For any suggestion type, prioritize local suggestions first
+    if (suggestionType === 'vacation' || suggestionType === 'warmer' || suggestionType === 'colder' || suggestionType === 'dry') {
+      const localSuggestions = suggestions[userCountry]?.[suggestionType] || [];
+      
+      if (localSuggestions.length > 0) {
+        // Combine local and global suggestions, prioritizing local
+        const globalSuggestions = suggestions['global']?.[suggestionType] || [];
+        baseSuggestions = [...localSuggestions, ...globalSuggestions.slice(0, 2)];
+        console.log('Combined suggestions (local + global):', baseSuggestions);
+      }
+      
+      // Remove duplicates while preserving order
+      baseSuggestions = [...new Set(baseSuggestions)];
+    }
+  }
+
+  console.log('Final suggestions:', baseSuggestions.slice(0, 5));
+  return baseSuggestions.slice(0, 5); // Limit to 5 suggestions
+}
