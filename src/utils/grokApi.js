@@ -207,11 +207,11 @@ USER QUERY: "${userMessage}"`;
             content: systemPrompt
           },
           {
-            role: 'user', 
+            role: 'user',
             content: userMessage
           }
         ],
-        model: 'llama-3.1-8b-instant',
+        model: 'openai/gpt-oss-20b',
         temperature: 0.1,
         max_tokens: 1000
       })
@@ -451,7 +451,7 @@ Return JSON only. No explanations.`;
             content: userMessage
           }
         ],
-        model: 'llama-3.1-8b-instant',
+        model: 'openai/gpt-oss-20b',
         stream: false,
         temperature: 0.1,
         max_tokens: 500,
